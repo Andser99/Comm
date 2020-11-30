@@ -3,9 +3,12 @@ import struct
 
 #returns a packed keepAlive packet
 def keepAlive():
-    pckKeep = CustomPacket(0, 1, 0, 0, 0, None, None)
+    pckKeep = CustomPacket(0, b'\x01', b'\x00', 0, 0, None, None)
     return pckKeep.pack()
-
+#returns a packed acknowledge for a keepAlive packet
+def keepAliveAck():
+    pckKeep = CustomPacket(0, b'\x05', b'\x00', 0, 0, None, None)
+    return pckKeep.pack()
 
 class CustomPacket:
     def __init__(self, pkt_length, flags, pkt_type, sequence, sequence_len, checksum=None, data=None):
@@ -57,12 +60,12 @@ class CustomPacket:
     def setFlags(self, flags):
         for x in flags:
             if x == "A":
-                self.flags = 0b00000100
+                self.flags = b'\x04'
             elif x == "K":
-                self.flags = 0b00000001
+                self.flags = b'\x01'
             elif x == "AK":
-                self.flags = 0b00000101
+                self.flags = b'\x05'
             elif x == "E":
-                self.flags = 0b00000010
+                self.flags = b'\x02'
 
 
