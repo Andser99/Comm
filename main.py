@@ -189,6 +189,7 @@ def ReconstructBuffer():
         if input() == "y":
             IsReceiver = False
             stopKeepAlive()
+            CurrentSocket.close()
             waitForSending()
 
 
