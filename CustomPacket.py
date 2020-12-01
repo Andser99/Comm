@@ -1,5 +1,6 @@
 import struct
-
+import crcmod
+import random
 
 #returns a packed keepAlive packet
 def keepAlive():
@@ -23,6 +24,9 @@ class CustomPacket:
         self.data = data
         if checksum is not None:
             self.calculateChecksum()
+            #if random.random() > 0.95:
+            #    self.valid = False
+            #else:
             self.valid = (checksum == self.checksum)
         else:
             self.calculateChecksum()
@@ -30,23 +34,26 @@ class CustomPacket:
 
 
     def calculateChecksum(self):
-        self.checksum = 1488
+        crc16 = crcmod.mkCrcFun(0x11021, rev=False, initCrc=0x0000, xorOut=0x0000)
+        x = crc16(self.packForChecksum())
+        if random.random() > 1:
+            self.checksum = 1234
+        else:
+            self.checksum = x
 
     def pack(self):
-        kurva = self.flags
-        #if isinstance(kurva, int):
-        #    kurva = bytes([kurva])
-        #    if kurva == 0:
-        #        kurva = 0b00000000
-        #elif len(kurva) == 0:
-        #    kurva = 0b00000000
-        packed = struct.pack('!hcchhh', self.pkt_length, kurva, self.pkt_type, self.sequence, self.sequence_len, self.checksum)
+        packed = struct.pack('!hccHHH', self.pkt_length, self.flags, self.pkt_type, self.sequence, self.sequence_len, self.checksum)
         if self.data is not None:
-            packed += self.data[0]
+            packed += self.data
         return packed
 
-    def checkValidity(self):
-        return self.checksum == 1488
+    def packForChecksum(self):
+        if self.sequence_len > 65535:
+            print("Size exceeded protocol limits")
+        packed = struct.pack('!hccHH', self.pkt_length, self.flags, self.pkt_type, self.sequence, self.sequence_len)
+        if self.data is not None:
+            packed += self.data
+        return packed
 
     def print(self):
         print(f"Packet {self.sequence}")
@@ -67,5 +74,6 @@ class CustomPacket:
                 self.flags = b'\x05'
             elif x == "E":
                 self.flags = b'\x02'
+        self.calculateChecksum()
 
 
