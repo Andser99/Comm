@@ -2,6 +2,14 @@ import struct
 import crcmod
 import random
 
+#returns a packed endComm packet
+def endComm():
+    pckEnd = CustomPacket(0, b'\x02', b'\x00', 0, 0, None, None)
+    return pckEnd.pack()
+#returns a packed endComm packet
+def endCommAck():
+    pckEnd = CustomPacket(0, b'\x06', b'\x00', 0, 0, None, None)
+    return pckEnd.pack()
 #returns a packed keepAlive packet
 def keepAlive():
     pckKeep = CustomPacket(0, b'\x01', b'\x00', 0, 0, None, None)
@@ -24,10 +32,11 @@ class CustomPacket:
         self.data = data
         if checksum is not None:
             self.calculateChecksum()
-            #if random.random() > 0.95:
-            #    self.valid = False
-            #else:
-            self.valid = (checksum == self.checksum)
+            if self.pkt_length == 11 and random.random() > 0.5:
+                self.valid = False
+                print(f"simulating invalid packet with seq: {sequence} {data}")
+            else:
+                self.valid = (checksum == self.checksum)
         else:
             self.calculateChecksum()
             self.valid = True
@@ -74,6 +83,8 @@ class CustomPacket:
                 self.flags = b'\x05'
             elif x == "E":
                 self.flags = b'\x02'
+            elif x == "EA":
+                self.flags = b'\x06'
         self.calculateChecksum()
 
 

@@ -38,13 +38,8 @@ def main():
     sender = False
     if inp == "send":
         sender = True
-        print("Max packet size (1..65535): ")
+        print("Max fragment size (1..65535): ")
         MaxPacketSize = int(input())
-    else:
-        print("relative path for saving: ")
-        DownloadedPath = input()
-        if DownloadedPath == "":
-            DownloadedPath = "download/"
 
     if sender:
         waitForSending()
@@ -61,7 +56,12 @@ def waitAsReceiver():
     global LastPacketTime
     global IsKeepingAlive
     global IsReceiver
+    global DownloadedPath
 
+    print("relative path for saving: ")
+    DownloadedPath = input()
+    if DownloadedPath == "":
+        DownloadedPath = "download/"
     print("Address and port {<address> <port>}:")
     inp = input().split(" ") #ip , port
     CurrentIP = inp[0]
@@ -100,6 +100,9 @@ def waitAsReceiver():
             ## If its an ack to keep alive, just reset the last packet time
             if pkt.flags == b'\x05':
                 LastPacketTime = time.time()
+            elif pkt.flags == b'\x02':
+                send(CustomPacket.endCommAck())
+                stopKeepAlive()
             else:
                 ackPacket = CustomPacket.CustomPacket(0, 0, unpacked[1], unpacked[2], unpacked[3])
                 ackPacket.setFlags("A")
@@ -125,11 +128,13 @@ def clearBufferOfLast():
         if x in CommBuffer.keys():
             del CommBuffer[x]
 
+IsBlockingKeepAlive = False
 def ReconstructBuffer():
     global SequenceOfLastReceived
     global SeqLenOfLastReceived
     global LastMessage
     global IsReceiver
+    global IsBlockingKeepAlive
     if Verbose: print("..Start Reconstruction Attempt..")
     global CommBuffer
     if len(CommBuffer) == 0:
@@ -144,7 +149,7 @@ def ReconstructBuffer():
     if maxSeqLen < len(CommBuffer):
         if Verbose: print("not enough buffer values to reconstruct based on largest found sequence length")
         clearBufferOfLast()
-    if (len(CommBuffer) == maxSeqLen or len(CommBuffer) % 10 == 0): print(f"Fragments: {len(CommBuffer)}/{maxSeqLen}")
+    if (len(CommBuffer) == maxSeqLen or len(CommBuffer) % 10 == 1): print(f"Fragments: {len(CommBuffer)}/{maxSeqLen}")
     if maxSeqLen > len(CommBuffer):
         return
     ordered = sorted(CommBuffer.values(), key=lambda x: x.sequence)
@@ -175,22 +180,27 @@ def ReconstructBuffer():
             print(data)
             LastMessage = data
         elif isFile:
-            f = open(DownloadedPath + ordered[0].data.decode("utf-8"), "wb")
+            savePath = DownloadedPath + "\\" + ordered[0].data.decode("utf-8")
+            f = open(savePath, "wb")
             data = b''
             for x in ordered[1:]:
                 if x.data is not None:
                     data += x.data
             f.write(data)
             f.close()
+            print(f"File saved at {savePath}")
         SequenceOfLastReceived = ordered[-1].sequence
         SeqLenOfLastReceived = ordered[-1].sequence_len
         CommBuffer.clear()
         print("Switch to sender? y/n")
+        IsBlockingKeepAlive = True
         if input() == "y":
             IsReceiver = False
             stopKeepAlive()
             CurrentSocket.close()
+            IsBlockingKeepAlive = False
             waitForSending()
+        IsBlockingKeepAlive = False
 
 
     else:
@@ -210,6 +220,7 @@ def waitForReceive():
     global LastPacketTime
     global AckList
     global IsOpen
+    global Ended
     ReceivedList.clear()
     time.sleep(0.1) ###DEBUG !!!!!!!!!!!!!!
     #CurrentSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -245,6 +256,8 @@ def waitForReceive():
                 if pkt.flags == b'\x01':
                     ackKeepAlive = CustomPacket.keepAliveAck()
                     send(ackKeepAlive)
+                if pkt.flags == b'\x06':
+                    Ended = True
                 else:
                     ## check if theres a pending ack with that sequence number
                     #ackIndex = -1
@@ -280,16 +293,17 @@ def keepAliveFunction():
     global IsOpen
     global ResponseAddress
     global ShouldRunKeepAlive
+    global IsBlockingKeepAlive
     while ShouldRunKeepAlive:
         if IsOpen and ResponseAddress is not None:
-            if time.time() - LastPacketTime > 3:
+            if time.time() - LastPacketTime > 15 and not IsBlockingKeepAlive:
+                #CurrentSocket.close()
+                print("15s Elapsed in keepalive")
+                #IsOpen = False
+            elif time.time() - LastPacketTime > 2.976:
                 CurrentSocket.sendto(CustomPacket.keepAlive(), ResponseAddress)
                 time.sleep(2.95)
             time.sleep(0.05)
-            if time.time() - LastPacketTime > 15:
-                CurrentSocket.close()
-                print("15s Elapsed in keepalive")
-                IsOpen = False
 
 
 def waitForSending():
@@ -323,9 +337,19 @@ def waitForSending():
             CurrentSocket.close()
             CurrentSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             waitAsReceiver()
+        elif inp[0] == "e":
+            endComm()
+            CurrentSocket.close()
+            CurrentSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         inp = input().split(" ")
     return False
 
+Ended = False
+
+def endComm():
+    while not Ended:
+        send(CustomPacket.endComm())
+        time.sleep(1)
 
     #<type> <message>
 def sendText(text):
@@ -421,7 +445,7 @@ def sendFile(path):
                 send(listToSend[i].pack())
                 j += 1
             i += 1
-            if j%10 == 0:
+            if j%20 == 0:
                 j += 1
                 print(f'Sent: {unackCount}')
                 time.sleep(0.01 + (MaxPacketSize / 10000))
