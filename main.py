@@ -57,6 +57,8 @@ def waitAsReceiver():
     global IsKeepingAlive
     global IsReceiver
     global DownloadedPath
+    global SeqLenOfLastReceived
+    global SequenceOfLastReceived
 
     print("relative path for saving: ")
     DownloadedPath = input()
@@ -77,6 +79,8 @@ def waitAsReceiver():
             continue
         if ResponseAddress != address:
             print("Starting keepalive thread")
+            SeqLenOfLastReceived = 0
+            SequenceOfLastReceived = -1
             startKeepAlive()
         ResponseAddress = address
         length = rec[0]*256 + rec[1]
@@ -149,7 +153,7 @@ def ReconstructBuffer():
     if maxSeqLen < len(CommBuffer):
         if Verbose: print("not enough buffer values to reconstruct based on largest found sequence length")
         clearBufferOfLast()
-    if (len(CommBuffer) == maxSeqLen or len(CommBuffer) % 10 == 1): print(f"Fragments: {len(CommBuffer)}/{maxSeqLen}")
+    if ((len(CommBuffer) == maxSeqLen and maxSeqLen > 2) or len(CommBuffer) % 10 == 1): print(f"Fragments: {len(CommBuffer)}/{maxSeqLen+1}")
     if maxSeqLen > len(CommBuffer):
         return
     ordered = sorted(CommBuffer.values(), key=lambda x: x.sequence)
@@ -179,6 +183,7 @@ def ReconstructBuffer():
                     data += x.data.decode("utf-8")
             print(data)
             LastMessage = data
+            CommBuffer.clear()
         elif isFile:
             savePath = DownloadedPath + "\\" + ordered[0].data.decode("utf-8")
             f = open(savePath, "wb")
@@ -189,9 +194,9 @@ def ReconstructBuffer():
             f.write(data)
             f.close()
             print(f"File saved at {savePath}")
+            CommBuffer.clear()
         SequenceOfLastReceived = ordered[-1].sequence
         SeqLenOfLastReceived = ordered[-1].sequence_len
-        CommBuffer.clear()
         print("Switch to sender? y/n")
         IsBlockingKeepAlive = True
         if input() == "y":
@@ -272,14 +277,15 @@ def waitForReceive():
                 print(f'Message/Data{int(length)}: ', data)
     return
 
-ShouldRunKeepAlive = True
+ShouldRunKeepAlive = False
 keepAliveThread: threading.Thread
 def startKeepAlive():
     global keepAliveThread
     global ShouldRunKeepAlive
-    keepAliveThread = threading.Thread(target=keepAliveFunction)
-    ShouldRunKeepAlive = True
-    keepAliveThread.start()
+    if (ShouldRunKeepAlive == False):
+        keepAliveThread = threading.Thread(target=keepAliveFunction)
+        ShouldRunKeepAlive = True
+        keepAliveThread.start()
 
 def stopKeepAlive():
     global keepAliveThread
@@ -294,14 +300,18 @@ def keepAliveFunction():
     global ResponseAddress
     global ShouldRunKeepAlive
     global IsBlockingKeepAlive
+    IsPrinted = False
     while ShouldRunKeepAlive:
         if IsOpen and ResponseAddress is not None:
             if time.time() - LastPacketTime > 15 and not IsBlockingKeepAlive:
                 #CurrentSocket.close()
-                print("15s Elapsed in keepalive")
+                if not IsPrinted:
+                    print("15s Elapsed in keepalive")
+                    IsPrinted = True
                 #IsOpen = False
             elif time.time() - LastPacketTime > 2.976:
                 CurrentSocket.sendto(CustomPacket.keepAlive(), ResponseAddress)
+                IsPrinted = False
                 time.sleep(2.95)
             time.sleep(0.05)
 
